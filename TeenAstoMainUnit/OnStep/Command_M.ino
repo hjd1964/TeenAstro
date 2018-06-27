@@ -25,21 +25,21 @@ void Command_M(bool &supress_frame)
         //          Returns: Nothing
 
     if ((atoi2((char *)&parameter[1], &i)) &&
-      ((i >= 0) && (i <= 16399)) && (parkStatus == NotParked) &&
-      (trackingState != TrackingMoveTo))
+      ((i > 0) && (i <= 16399)) && trackingState == TrackingON && GuidingState != GuidingRecenter )
     {
-
+     
       if ((parameter[0] == 'e') || (parameter[0] == 'w'))
       {
 #ifdef SEPERATE_PULSE_GUIDE_RATE_ON
-        enableGuideRate(currentPulseGuideRate);
+        enableGuideRate(0,false);
 #else
-        enableGuideRate(currentGuideRate);
+        enableGuideRate(0);
 #endif
         guideDirAxis1 = parameter[0];
         guideDurationLastHA = micros();
         guideDurationHA = (long)i * 1000L;
         cli();
+        GuidingState = GuidingPulse;
         if (guideDirAxis1 == 'e')
           guideTimerRateAxis1 = -guideTimerBaseRate;
         else
@@ -50,7 +50,7 @@ void Command_M(bool &supress_frame)
       else if ((parameter[0] == 'n') || (parameter[0] == 's'))
       {
 #ifdef SEPERATE_PULSE_GUIDE_RATE_ON
-        enableGuideRate(currentPulseGuideRate);
+        enableGuideRate(0,false);
 #else
         enableGuideRate(currentGuideRate);
 #endif
@@ -65,6 +65,7 @@ void Command_M(bool &supress_frame)
           if (pierSide >= PierSideWest)
             rev = !rev;
           cli();
+          GuidingState = GuidingPulse;
           guideTimerRateAxis2 = rev ? -guideTimerBaseRate : guideTimerBaseRate;
           sei();
         }

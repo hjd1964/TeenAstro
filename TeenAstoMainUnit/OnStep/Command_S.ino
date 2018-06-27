@@ -6,6 +6,19 @@ void Command_S(Command& process_command)
   char* conv_end;
   switch (command[1])
   {
+  case '!':
+    i = (int)(parameter[0] - '0');
+    if (i > 0 && i < 5)
+    {
+      EEPROM.write(EE_mountType, i);
+      Serial.end();
+      delay(1000);
+      _reboot_Teensyduino_();
+    }
+    else
+      commandError = true;
+    break;
+
   case 'a':
     //  :SasDD*MM#
     //         Set target object altitude to sDD*MM# or sDD*MM'SS# (based on precision setting)
@@ -217,9 +230,7 @@ void Command_S(Command& process_command)
       if ((atoi2(parameter, &i)) && ((i >= 60) && (i <= 90)))
       {
         maxAlt = i;
-#ifdef MOUNT_TYPE_ALTAZM
-        if (maxAlt > 87) maxAlt = 87;
-#endif
+        maxAlt = maxAlt > 87 && mountType == MOUNT_TYPE_ALTAZM ? 87 : maxAlt;
         EEPROM.update(EE_maxAlt, maxAlt);
       }
       else
@@ -229,6 +240,7 @@ void Command_S(Command& process_command)
       commandError = true;
   }
   break;
+
 
 
   case 'r':
@@ -281,18 +293,22 @@ void Command_S(Command& process_command)
     else
     {
       localSite.setLat(lat);
-#ifdef MOUNT_TYPE_ALTAZM
-      celestialPoleStepAxis2 = AltAzmDecStartPos * StepsPerDegreeAxis2;
-      if (latitude < 0)
-        celestialPoleStepAxis1 = halfRotAxis1;
+      if (mountType == MOUNT_TYPE_ALTAZM)
+      {
+        celestialPoleStepAxis2 = fabs(*localSite.latitude()) * StepsPerDegreeAxis2;
+        if (*localSite.latitude() < 0)
+          celestialPoleStepAxis1 = halfRotAxis1;
+        else
+          celestialPoleStepAxis1 = 0L;
+      }
       else
-        celestialPoleStepAxis1 = 0L;
-#else
-      if (*localSite.latitude() < 0)
-        celestialPoleStepAxis2 = -halfRotAxis2;
-      else
-        celestialPoleStepAxis2 = halfRotAxis2;
-#endif
+      {
+        if (*localSite.latitude() < 0)
+          celestialPoleStepAxis2 = -halfRotAxis2;
+        else
+          celestialPoleStepAxis2 = halfRotAxis2;
+      }
+
       if (*localSite.latitude() > 0.0)
         HADir = HADirNCPInit;
       else
@@ -375,20 +391,35 @@ void Command_S(Command& process_command)
     {                   // 9n: Misc.
       switch (parameter[1])
       {
+      case '0':
+      {
+        if (GuidingState == GuidingOFF)
+        {
+          int val = strtol(&parameter[3], NULL, 10);
+          val = val > 255 || val < 0 ? 100 : val;
+          EEPROM.write(EE_pulseGuideRate, val);
+          guideRates[0] = (double)val / 100.;
+          if (activeGuideRate == 0)
+            enableGuideRate(0, true);
+        }
+        break;
+      }
+
       case '2':   // set new acceleration rate
         maxRate = strtol(&parameter[3], NULL, 10) * 16L;
         if (maxRate < (MaxRate / 2L) * 16L)
           maxRate = (MaxRate / 2L) * 16L;
-        if (maxRate > (MaxRate * 2L) * 16L)
-          maxRate = (MaxRate * 2L) * 16L;
         EEPROM_writeInt(EE_maxRate, (int)(maxRate / 16L));
-        SetAccelerationRates(maxRate);
+        SetAccelerationRates();
         break;
 
       case '3':   // acceleration rate preset
         quietReply = true;
         switch (parameter[3])
         {
+        case '6':
+          maxRate = MaxRate * 32L;
+          break;  // 50%
         case '5':
           maxRate = MaxRate * 32L;
           break;  // 50%
@@ -411,7 +442,7 @@ void Command_S(Command& process_command)
           break;
         }
 
-        SetAccelerationRates(maxRate);
+        SetAccelerationRates();
         break;
 
       case '5':           // autoContinue
@@ -430,6 +461,32 @@ void Command_S(Command& process_command)
         break;
       }
     }
+    else if (parameter[0] == 'E')
+    {
+      switch (parameter[1])
+      {
+      case '9': // minutesPastMeridianE 
+        minutesPastMeridianGOTOE = (double)strtol(&parameter[3], NULL, 10);
+        if (minutesPastMeridianGOTOE > 180) minutesPastMeridianGOTOE = 180;
+        if (minutesPastMeridianGOTOE < -180) minutesPastMeridianGOTOE = -180;
+        EEPROM.update(EE_dpmE, round((minutesPastMeridianGOTOE*15.0) / 60.0) + 128);
+        break;
+      case 'A': // minutesPastMeridianW
+        minutesPastMeridianGOTOW = (double)strtol(&parameter[3], NULL, 10);
+        if (minutesPastMeridianGOTOW > 180) minutesPastMeridianGOTOW = 180;
+        if (minutesPastMeridianGOTOW < -180) minutesPastMeridianGOTOW = -180;
+        EEPROM.update(EE_dpmW, round((minutesPastMeridianGOTOW*15.0) / 60.0) + 128);
+        break;
+      case 'B': // minutesPastMeridianW
+        underPoleLimitGOTO = (double)strtol(&parameter[3], NULL, 10)/10;
+        if (underPoleLimitGOTO > 12) underPoleLimitGOTO = 12;
+        if (underPoleLimitGOTO < 9) underPoleLimitGOTO = 9;
+        EEPROM.update(EE_dup, round(underPoleLimitGOTO*10.0));
+        break;
+
+      default: commandError = true;
+      }
+    }
     else
       commandError = true;
   }
@@ -443,8 +500,6 @@ void Command_S(Command& process_command)
     if (!dmsToDouble(&newTargetAzm, parameter, false))
       commandError = true;
     break;
-
-
   default:
     commandError = true;
     break;

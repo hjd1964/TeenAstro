@@ -16,17 +16,17 @@ void Command_GXE0()
 #else
   c += "0";
 #endif
-#if defined(MOUNT_TYPE_GEM)
+if (mountType == MOUNT_TYPE_GEM)
   c += "0";
-#elif defined(MOUNT_TYPE_FORK)
+else if (mountType == MOUNT_TYPE_FORK)
   c += "1";
-#elif defined(MOUNT_TYPE_FORK_ALT)
+else if (mountType == MOUNT_TYPE_FORK_ALT)
   c += "2";
-#elif defined(MOUNT_TYPE_ALTAZM)
+else if (mountType == MOUNT_TYPE_ALTAZM)
   c += "3";
-#else
+else
   c += "9";
-#endif
+
 #if defined(ST4_OFF)
   c += "0";
 #elif defined(ST4_ON)
@@ -118,7 +118,7 @@ void Command_GXE0()
 #else
   c += "0";
 #endif
-#ifdef RememberMaxRate_ON
+#if true
   c += "1";
 #else
   c += "0";
@@ -191,7 +191,7 @@ void Command_GX()
     switch (parameter[1])
     {
     case '0':
-      dtostrf(guideRates[currentPulseGuideRate], 2,
+      dtostrf(guideRates[0], 2,
         2, reply);
       quietReply = true;
       break;  // pulse-guide rate
@@ -265,17 +265,15 @@ void Command_GX()
       quietReply = true;
       break;
     case '9':
-      sprintf(reply, "%ld",
-        (long)round(MinutesPastMeridianEGOTO));
+      sprintf(reply, "%ld", (long)round(minutesPastMeridianGOTOE));
       quietReply = true;
       break;
     case 'A':
-      sprintf(reply, "%ld",
-        (long)round(MinutesPastMeridianWGOTO));
+      sprintf(reply, "%ld", (long)round(minutesPastMeridianGOTOW));
       quietReply = true;
       break;
     case 'B':
-      sprintf(reply, "%ld", (long)round(UnderPoleLimitGOTO));
+      sprintf(reply, "%ld", (long)round(underPoleLimitGOTO*10));
       quietReply = true;
       break;
     case 'C':
@@ -588,11 +586,8 @@ void  Command_G()
     //         Returns the tracking rate if siderealTracking, 0.0 otherwise
     if (trackingState == TrackingON)
     {
-#ifdef MOUNT_TYPE_ALTAZM
-      f = GetTrackingRate() * 1.00273790935 * 60.0;
-#else
-      f = (trackingTimerRateAxis1 * 1.00273790935) * 60.0;
-#endif
+      f = mountType == MOUNT_TYPE_ALTAZM ? GetTrackingRate() : trackingTimerRateAxis1 ;
+      f *= 60* 1.00273790935;
     }
     else
       f = 0.0;
@@ -617,37 +612,48 @@ void  Command_G()
   case 'U':
   {
     //  :GU#   Get telescope Status
+    for ( i = 0; i<50; i++)
+        reply[i] = ' ';
     i = 0;
-    if (trackingState != TrackingON) reply[i++] = 'n';
-    if (trackingState != TrackingMoveTo) reply[i++] = 'N';
+    if (trackingState != TrackingON) reply[0] = 'n';
+    if (trackingState != TrackingMoveTo) reply[1] = 'N';
 
     const char  *parkStatusCh = "pIPF";
-    reply[i++] = parkStatusCh[parkStatus];  // not [p]arked, parking [I]n-progress, [P]arked, Park [F]ailed
-    if (atHome) reply[i++] = 'H';
-    if (pps.m_synced) reply[i++] = 'S';
-    if ((guideDirAxis1) || (guideDirAxis2)) reply[i++] = 'G';
-    if (faultAxis1 || faultAxis2) reply[i++] = 'f';
+    reply[2] = parkStatusCh[parkStatus];  // not [p]arked, parking [I]n-progress, [P]arked, Park [F]ailed
+    if (atHome) reply[3] = 'H';
+    if (pps.m_synced) reply[4] = 'S';
+    if (GuidingState != GuidingOFF)
+    {
+      reply[5] = 'G';
+      if (GuidingState == GuidingPulse) reply[6] = '*';
+      else if (GuidingState == GuidingRecenter) reply[6] = '+';
+      if (guideDirAxis1 == 'e') reply[7] = '>';
+      else if(guideDirAxis1 == 'w') reply[7] = '<';
+      if (guideDirAxis2 == 'n') reply[8] = '^';
+      else if (guideDirAxis2 == 's') reply[8] = '_';
+    }
+    if (faultAxis1 || faultAxis2) reply[9] = 'f';
     if (refraction)
-      reply[i++] = 'r';
+      reply[10] = 'r';
     else
-      reply[i++] = 's';
-    if (onTrack) reply[i++] = 't';
+      reply[10] = 's';
+    if (onTrack) reply[11] = 't';
 
     // provide mount type
-#ifdef MOUNT_TYPE_GEM
-    reply[i++] = 'E';
-#endif
-#ifdef MOUNT_TYPE_FORK
-    reply[i++] = 'K';
-#endif
-#ifdef MOUNT_TYPE_FORK_ALT
-    reply[i++] = 'k';
-#endif
-#ifdef MOUNT_TYPE_ALTAZM
-    reply[i++] = 'A';
-#endif
-    reply[i++] = '0' + lastError;
-    reply[i++] = 0;
+    if (mountType == MOUNT_TYPE_GEM)
+      reply[12] = 'E';
+    else if (mountType == MOUNT_TYPE_FORK)
+      reply[12] = 'K';
+    else if (mountType == MOUNT_TYPE_FORK_ALT)
+      reply[12] = 'k';
+    else if (mountType == MOUNT_TYPE_ALTAZM)
+      reply[12] = 'A';
+    else
+      reply[12] = 'U';
+
+    reply[13] = '0' + lastError;
+    reply[14] = 0;
+    i = 15;
     quietReply = true;                                   //         Returns: SS#
   }
   break;

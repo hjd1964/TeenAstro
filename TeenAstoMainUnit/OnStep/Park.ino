@@ -132,6 +132,10 @@ boolean parkClearBacklash()
 byte park()
 {
   // Gets park position and moves the mount there
+  if (lastError != ERR_NONE)
+  {
+    return 4;
+  }
   if (trackingState != TrackingMoveTo)
   {
     parkSaved = EEPROM.read(EE_parkSaved);
@@ -225,11 +229,8 @@ boolean syncAtPark()
     DecDir = DecDirEInit;
 
   // set Meridian Flip behaviour to match mount type
-#ifdef MOUNT_TYPE_GEM
-  meridianFlip = MeridianFlipAlways;
-#else
-  meridianFlip = MeridianFlipNever;
-#endif
+  meridianFlip = mountType == MOUNT_TYPE_GEM ? MeridianFlipAlways : MeridianFlipNever;
+
   return true;
 }
 

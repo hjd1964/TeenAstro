@@ -498,10 +498,11 @@ void SetDeltaTrackingRate()
 void SetTrackingRate(double r)
 {
     az_deltaRateScale = r;
-#ifndef MOUNT_TYPE_ALTAZM
-    az_deltaAxis1 = r * 15.0;
-    az_deltaAxis2 = 0.0;
-#endif
+    if (mountType != MOUNT_TYPE_ALTAZM)
+    {
+      az_deltaAxis1 = r * 15.0;
+      az_deltaAxis2 = 0.0;
+    }
     SetDeltaTrackingRate();
 }
 
@@ -716,7 +717,7 @@ boolean do_refractionRate_calc()
 
 // -----------------------------------------------------------------------------------------------------------------------------
 // AltAz tracking
-#ifdef MOUNT_TYPE_ALTAZM
+
 #define AltAzTrackingRange  10  // distance in arc-min (20) ahead of and behind the current Equ position, used for rate calculation
 double  az_Alt1, az_Alt2, az_Azm1, az_Azm2;
 
@@ -741,15 +742,15 @@ boolean do_altAzmRate_calc()
         if (trackingState == TrackingMoveTo)
         {
             cli();
-            az_Axis1 = targetAxis1.part.m + indexAxis1Steps;
-            az_Axis2 = targetAxis2.part.m + indexAxis2Steps;
+            az_Axis1 = targetAxis1.part.m;
+            az_Axis2 = targetAxis2.part.m;
             sei();
         }
         else
         {
             cli();
-            az_Axis1 = posAxis1 + indexAxis1Steps;
-            az_Axis2 = posAxis2 + indexAxis2Steps;
+            az_Axis1 = posAxis1;
+            az_Axis2 = posAxis2;
             sei();
         }
 
@@ -833,7 +834,7 @@ boolean do_altAzmRate_calc()
 
     return done;
 }
-#endif
+
 
 // -----------------------------------------------------------------------------------------------------------------------------
 
@@ -874,31 +875,83 @@ double angDist(double h, double d, double h1, double d1)
 
 
 // Acceleration rate calculation
-void SetAccelerationRates(double maxRate)
+void SetAccelerationRates()
 {
     // set the new acceleration rate
+  double slewrate = (1.0 / (((double)StepsPerDegreeAxis1 * ((maxRate / 16L) / 1000000.0))) * 3600.0) / 15.0;
+  DegreesForAcceleration = slewrate / 100;
+  DegreesForRapidStop = 0.5 *DegreesForAcceleration;
+  guideRates[9] = slewrate;
+  guideRates[8] = slewrate/2.;
+  if (activeGuideRate > 7)
+  {
+    resetGuideRate();
+  }
   cli();
     StepsForRateChangeAxis1 = ((double) DegreesForAcceleration / sqrt( StepsPerDegreeAxis1)) * 0.3333333 * StepsPerDegreeAxis1 * maxRate;
     StepsForRateChangeAxis2 = ((double) DegreesForAcceleration / sqrt( StepsPerDegreeAxis2)) * 0.3333333 * StepsPerDegreeAxis2 * maxRate;
   sei();
 }
 
+// calculates the tracking speed for move commands
+void enableGuideRate(int g, bool force)
+{
+  // don't do these lengthy calculations unless we have to
+
+  if (g < 0) g = 0;
+  if (g > 9) g = 9;
+  if (activeGuideRate == g && !force) return;
+
+  activeGuideRate = g;
+
+  // this enables the guide rate
+  guideTimerBaseRate = guideRates[g];
+
+  cli();
+  amountGuideHA.fixed = doubleToFixed((guideTimerBaseRate * StepsPerSecondAxis1) / 100.0);
+  amountGuideDec.fixed = doubleToFixed((guideTimerBaseRate * StepsPerSecondAxis2) / 100.0);
+  sei();
+}
+void resetGuideRate()
+{
+  enableGuideRate(activeGuideRate, true);
+}
+
+void enableRateAxis1(double vRate)
+{
+  cli();
+  amountGuideHA.fixed = doubleToFixed((abs(vRate) * StepsPerSecondAxis1) / 100.0);
+  guideTimerRateAxis1 = vRate;
+  sei();
+}
+
+void enableRateAxis2(double vRate)
+{
+  cli();
+  amountGuideDec.fixed = doubleToFixed((abs(vRate) * StepsPerSecondAxis2) / 100.0);
+  guideTimerRateAxis2 = vRate;
+  sei();
+}
+
+
+
 // Remap HA DEC value between -180 +180 and -90 +90
 void CorrectHADec(double *HA, double *Dec)
 {
-#ifndef MOUNT_TYPE_ALTAZM
-  // switch from under the pole coordinates
-  if (*Dec > 90.0)
+  if (mountType != MOUNT_TYPE_ALTAZM)
   {
-    *Dec = (90.0 - *Dec) + 90;
-    *HA = *HA - 180.0;
+    // switch from under the pole coordinates
+    if (*Dec > 90.0)
+    {
+      *Dec = (90.0 - *Dec) + 90;
+      *HA = *HA - 180.0;
+    }
+    else if (*Dec < -90.0)
+    {
+      *Dec = (-90.0 - *Dec) - 90.0;
+      *HA = *HA - 180.0;
+    }
   }
-  else if (*Dec < -90.0)
-  {
-    *Dec = (-90.0 - *Dec) - 90.0;
-    *HA = *HA - 180.0;
-  }
-#endif
   while (*HA > 180.0) *HA -= 360.0;
   while (*HA < -180.0) *HA += 360.0;
 }

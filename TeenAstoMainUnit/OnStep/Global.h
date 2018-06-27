@@ -20,6 +20,14 @@ siteDefinition      localSite;
 #define PierSideFlipWE2  7
 #define PierSideFlipWE3  8
 
+
+enum Mount { MOUNT_UNDEFINED, MOUNT_TYPE_GEM, MOUNT_TYPE_FORK, MOUNT_TYPE_ALTAZM, MOUNT_TYPE_FORK_ALT};
+
+#define MeridianFlipNever   0
+#define MeridianFlipAlign   1
+#define MeridianFlipAlways  2
+
+
 #define CheckModeGOTO        0
 #define CheckModeTracking    1
 
@@ -32,8 +40,12 @@ boolean parkSaved = false;
 boolean atHome = true;
 boolean homeMount = false;
 byte pierSide = PierSideEast;
+byte meridianFlip = MeridianFlipNever;
+byte mountType = MOUNT_TYPE_GEM;
+byte maxAlignNumStar = 0;
 
-
+boolean refraction_enable = false;
+boolean onTrack = false;
 
 // 86164.09 sidereal seconds = 1.00273 clock seconds per sidereal second)
 long                    siderealInterval = 15956313L;
@@ -46,20 +58,12 @@ double                  HzCf = 16000000.0 / 60.0;   // conversion factor to go t
 volatile long           SiderealRate;               // based on the siderealInterval, this is the time between steps for sidereal tracking
 volatile long           TakeupRate;                 // this is the takeup rate for synchronizing the target and actual positions when needed
 
-// Tracking and rate control
-#ifdef MOUNT_TYPE_ALTAZM
-#define refraction_enable   false                   // refraction isn't allowed in Alt/Azm mode
-#else
-#define refraction_enable   true                    // refraction allowed
-#endif
-#ifdef TRACK_REFRACTION_RATE_DEFAULT_ON
-boolean                 refraction = refraction_enable;
-#else
-boolean                 refraction = false;
-#endif
-boolean                 onTrack = false;
 
 long                    maxRate = MaxRate * 16L;
+float                   pulseGuideRate = 0.25; //in sideral Speed
+double                  DegreesForAcceleration = 3;
+double                  DegreesForRapidStop = 0.5 *DegreesForAcceleration;
+
 volatile long           timerRateAxis1 = 0;
 volatile long           timerRateBacklashAxis1 = 0;
 volatile boolean        inbacklashAxis1 = false;
@@ -69,6 +73,12 @@ volatile long           timerRateBacklashAxis2 = 0;
 volatile boolean        inbacklashAxis2 = false;
 boolean                 faultAxis2 = false;
 
+
+#ifdef TRACK_REFRACTION_RATE_DEFAULT_ON
+boolean                 refraction = refraction_enable;
+#else
+boolean                 refraction = false;
+#endif
 
 unsigned int GearAxis1; //2000
 unsigned int StepRotAxis1;
@@ -128,15 +138,6 @@ IntervalTimer           itimer4;
 void                    TIMER4_COMPA_vect(void);
 
 
-// fix UnderPoleLimit for fork mounts
-#if defined(MOUNT_TYPE_FORK) || defined(MOUNT_TYPE_FORK_ALT)
-#undef UnderPoleLimit
-#define UnderPoleLimit  12
-#endif
-
-// either 0 or (fabs(latitude))
-#define AltAzmDecStartPos   (fabs(latitude))
-
 byte newTargetPierSide = 0;
 
 volatile long       posAxis1;    // hour angle position in steps
@@ -170,6 +171,10 @@ double              newTargetAlt = 0.0, newTargetAzm = 0.0; // holds the altitud
 double              currentAlt = 45;                        // the current altitude
 int                 minAlt;                                 // the minimum altitude, in degrees, for goTo's (so we don't try to point too low)
 int                 maxAlt;                                 // the maximum altitude, in degrees, for goTo's (to keep the telescope tube away from the mount/tripod)
+long                minutesPastMeridianGOTOE;               // for goto's, how far past the meridian to allow before we do a flip (if on the East side of the pier)- one hour of RA is the default = 60.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
+long                minutesPastMeridianGOTOW;               // as above, if on the West side of the pier.  If left alone, the mount will stop tracking when it hits the this limit.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
+double              underPoleLimitGOTO;                     // maximum allowed hour angle (+/-) under the celestial pole. OnStep will flip the mount and move the Dec. >90 degrees (+/-) once past this limit.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
+//                                                          // If left alone, the mount will stop tracking when it hits this limit.  Valid range is 7 to 11 hours.
 bool                autoContinue = false;                   // automatically do a meridian flip and continue when we hit the MinutesPastMeridianW
 
                                             // Stepper/position/rate ----------------------------------------------------------------------------------------------------
@@ -225,36 +230,23 @@ boolean highPrecision = true;
 #define TrackingOFF                0
 #define TrackingON                 1
 #define TrackingMoveTo             2
+#define GuidingOFF                 0
+#define GuidingPulse               1
+#define GuidingRecenter            2
 
 #define TrackingSolar 0.99726956632
 #define TrackingLunar 0.96236513150
 
 volatile byte trackingState = TrackingOFF;
-int lastSetTrakingEnable = 0;
+volatile byte GuidingState  = GuidingOFF;
+unsigned long lastSetTrakingEnable = millis();
 unsigned long lastSecurityCheck = millis();
 byte abortTrackingState = TrackingOFF;
 volatile byte lastTrackingState = TrackingOFF;
 boolean abortSlew = false;
 
-#define MeridianFlipNever   0
-#define MeridianFlipAlign   1
-#define MeridianFlipAlways  2
-#ifdef MOUNT_TYPE_GEM
-byte meridianFlip = MeridianFlipAlways;
-#endif
-#ifdef MOUNT_TYPE_FORK
-byte meridianFlip = MeridianFlipAlign;
-#endif
-#ifdef MOUNT_TYPE_FORK_ALT
-byte meridianFlip = MeridianFlipNever;
-#endif
-#ifdef MOUNT_TYPE_ALTAZM
-byte meridianFlip = MeridianFlipNever;
-#endif
-
-
 // Command processing -------------------------------------------------------------------------------------------------------
-#define BAUD    9600
+#define BAUD    57600
 
 boolean commandError = false;
 boolean quietReply = false;
@@ -295,17 +287,7 @@ byte bufferPtr_ethernet = 0;
 // Misc ---------------------------------------------------------------------------------------------------------------------
 #define Rad 57.29577951
 
-// align
-#if defined(MOUNT_TYPE_GEM)
-#define MAX_NUM_ALIGN_STARS '3'
-#elif defined(MOUNT_TYPE_FORK)
-#define MAX_NUM_ALIGN_STARS '3'
-#elif defined(MOUNT_TYPE_FORK_ALT)
-#define MAX_NUM_ALIGN_STARS '1'
-#elif defined(MOUNT_TYPE_ALTAZM)
-#define MAX_NUM_ALIGN_STARS '3'
-#else
-#endif
+
 
 // serial speed
 unsigned long   baudRate[10] =
@@ -326,17 +308,12 @@ fixed_t         fstepAxis2;
 #define GuideRateNone   255
 
 
-#define slewRate        (1.0 / (((double) StepsPerDegreeAxis1 * (MaxRate / 1000000.0))) * 3600.0)/15.0
-#define halfSlewRate    (slewRate / 2.0)
 double          guideRates[10] =
 {
-  0.25 * 15, 0.5 * 15, 1.0 * 15, 2.0 * 15, 4.0 * 15, 16.0 * 15, 32.0 * 15, 64.0 * 15, halfSlewRate, slewRate
+  0.25 , 0.5 , 1.0 , 2.0 , 4.0 , 16.0, 32.0 , 64.0, 64.0, 64.0
 };
 
-
 //                      .25X .5x 1x 2x 4x  8x 24x 48x half-MaxRate MaxRate
-byte            currentGuideRate = GuideRate16x;
-byte            currentPulseGuideRate = GuideRate1x;
 volatile byte   activeGuideRate = GuideRateNone;
 
 volatile byte   guideDirAxis1 = 0;

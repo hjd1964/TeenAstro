@@ -23,16 +23,13 @@
 
 // Mount type, default is _GEM (German Equatorial) other options are _FORK, _FORK_ALT.  _FORK switches off Meridian Flips after (1, 2 or 3 star) alignment is done.  _FORK_ALT disables Meridian Flips (1 star align.)
 // _ALTAZM is for Alt/Azm mounted 'scopes (1 star align only.)
-#define MOUNT_TYPE_GEM
 
 // ST4 interface on pins 47, 49, 51, 53.  Pin 47 is RA- (West), Pin 49 is Dec- (South), Pin 51 is Dec+ (North), Pin 53 is RA+ (East.)  Teensy3.1 pins 24, 25, 26, 27.
 // ST4_ON enables the interface.  ST4_PULLUP enables the interface and any internal pullup resistors.
 // It is up to you to create an interface that meets the electrical specifications of any connected device, use at your own risk.
-// ST4_HAND_CONTROL_ON allows guide rates >1x while SEPERATE_PULSE_GUIDE_RATE_ON is enabled
 // ST4_ALTERNATE_PINS_ON moves the interface (Mega2560 only) to pins 43, 45, 47, 49.  Pin 43 is Dec- (South), Pin 45 is Dec+ (North), Pin 47 is RA- (West), Pin 49 is RA+ (East.)
 // ST4_ALTERNATE_PINS_ON is required for Steve's ST4 board and is also required if the ST4 interface is to be used alongside the Arduino Ethernet Shield
 #define ST4_OFF
-#define ST4_HAND_CONTROL_OFF
 #define ST4_ALTERNATE_PINS_OFF
 // PPS sense rising edge on pin 21 for optional precision clock source (GPS, for example), default=OFF (Teensy3.1 Pin 23)
 #define PPS_SENSE_OFF
@@ -66,18 +63,12 @@
 #define SEPERATE_PULSE_GUIDE_RATE_ON
 
 // ADJUST THE FOLLOWING TO MATCH YOUR MOUNT --------------------------------------------------------------------------------
-#define RememberMaxRate_OFF          // set to ON and OnStep will remember rates set in the ASCOM driver or Android App, default=OFF 
-#define MaxRate                   32 // this is the minimum number of micro-seconds between micro-steps
+#define MaxRate                   20 // this is the minimum number of micro-seconds between micro-steps
                                      // minimum* (fastest goto) is around 16 (Teensy3.1) or 32 (Mega2560), default=96 higher is ok
                                      // too low and OnStep communicates slowly and/or freezes as the motor timers use up all the MCU time
                                      // * = minimum can be lower, when both AXIS1/AXIS2_MODE_GOTO are used by AXIS1/AXIS2_STEP_GOTO times
 
-#define DegreesForAcceleration   3.0 // approximate number of degrees for full acceleration or deceleration: higher values=longer acceleration/deceleration
-                                     // Default=5.0, too low (about <1) can cause gotos to never end if micro-step mode switching is enabled.
-#define DegreesForRapidStop      0.5*DegreesForAcceleration // approximate number of degrees required to stop when requested or if limit is exceeded during a slew: higher values=longer deceleration
-                                     // Default=1.0, too low (about <1) can cause gotos to never end if micro-step mode switching is enabled.
-
-#define BacklashTakeupRate        25 // backlash takeup rate (in multipules of the sidereal rate): too fast and your motors will stall,
+#define BacklashTakeupRate        60 // backlash takeup rate (in multipules of the sidereal rate): too fast and your motors will stall,
                                      // too slow and the mount will be sluggish while it moves through the backlash
                                      // for the most part this doesn't need to be changed, but adjust when needed.  Default=25
 
@@ -115,16 +106,6 @@
 #define REVERSE_AXIS1_ON          // reverse the direction of movement for the HA/RA axis, adjust as needed or reverse your wiring so things move in the right direction
 #define REVERSE_AXIS2_ON        // reverse the direction of movement for the Dec axis (both reversed for my EM10b, both normal for G11)
 #endif
-
-#define MinutesPastMeridianEGOTO        00 // for goto's, how far past the meridian to allow before we do a flip (if on the East side of the pier) - one hour of RA is the default = 60.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
-#define MinutesPastMeridianWGOTO        00 // as above, if on the West side of the pier.  If left alone, the mount will stop tracking when it hits the this limit.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
-#define MinutesPastMeridianETracking    MinutesPastMeridianEGOTO + 05 // for Tracking's 
-#define MinutesPastMeridianWTracking    MinutesPastMeridianWGOTO + 05 
-
-#define UnderPoleLimitGOTO           12 // maximum allowed hour angle (+/-) under the celestial pole. OnStep will flip the mount and move the Dec. >90 degrees (+/-) once past this limit.  Sometimes used for Fork mounts in Align mode.  Ignored on Alt/Azm mounts.
-                                        // If left alone, the mount will stop tracking when it hits this limit.  Valid range is 7 to 11 hours.
-
-#define UnderPoleLimitTracking      UnderPoleLimitGOTO + 1.0/60.
 
 #define MinDec                   -91 // minimum allowed declination, default = -91 (off)  Ignored on Alt/Azm mounts.
 #define MaxDec                   +91 // maximum allowed declination, default =  91 (off)  Ignored on Alt/Azm mounts.

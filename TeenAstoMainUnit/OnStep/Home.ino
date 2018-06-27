@@ -4,6 +4,7 @@
 boolean goHome()
 {
     if ((parkStatus != NotParked) && (parkStatus != Parking)) return false; // fail, moving to home not allowed if Parked
+    if (lastError != ERR_NONE) return false;                                // fail, cannot move if there are errors
     if (trackingState == TrackingMoveTo) return false;                      // fail, moving to home not allowed during a move
     if (guideDirAxis1 || guideDirAxis2) return false;                       // fail, moving to home not allowed while guiding
     cli();
@@ -55,24 +56,20 @@ boolean setHome()
     // reset pointing model
     alignNumStars = 0;
     alignThisStar = 0;
-#ifdef MOUNT_TYPE_ALTAZM
-    Align.init();
-#endif
+    if (mountType == MOUNT_TYPE_ALTAZM)
+      Align.init();
+
     GeoAlign.init();
 
     // reset meridian flip control
-#ifdef MOUNT_TYPE_GEM
+if (mountType==MOUNT_TYPE_GEM)
     meridianFlip = MeridianFlipAlways;
-#endif
-#ifdef MOUNT_TYPE_FORK
+else if (mountType==MOUNT_TYPE_FORK)
     meridianFlip = MeridianFlipAlign;
-#endif
-#ifdef MOUNT_TYPE_FORK_ALT
+else if (mountType == MOUNT_TYPE_FORK_ALT)
     meridianFlip = MeridianFlipNever;
-#endif
-#ifdef MOUNT_TYPE_ALTAZM
+else if (mountType == MOUNT_TYPE_ALTAZM)
     meridianFlip = MeridianFlipNever;
-#endif
 
     // where we are
     homeMount = false;
